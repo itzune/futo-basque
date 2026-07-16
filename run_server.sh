@@ -23,7 +23,8 @@
 #   1   = clean corpus (Latxa v2)     1b  = BSM cleaning
 #   2   = tokenizer                    3   = pretrain (clean tier ONLY)
 #   4a  = isolated autocorrect         4b  = in-context autocorrect
-#   4c  = conversational adaptation (NEW)
+#   4c  = conversational adaptation    4d  = clean-text recovery (legacy)
+#   4m  = unified multi-task finetune (NEW — replaces 4a/4b/4c/4d)
 #   5   = package to GGUF
 #
 # Env overrides:
@@ -44,6 +45,8 @@ PRETRAIN_OUT="pretrain"
 STAGE_A="finetune/stage_a/final"
 STAGE_B="finetune/stage_b/final"
 STAGE_C="finetune/stage_c/final"
+STAGE_D="finetune/stage_d/final"
+STAGE_M="finetune/stage_m/final"
 LLAMA_CPP="${LLAMA_CPP:-/root/llama.cpp}"
 WANDB_PROJECT="${WANDB_PROJECT:-futo-eu}"
 
@@ -56,12 +59,14 @@ CFG_PHASE4A_DP="configs/phase4a_dataprep.yaml"
 CFG_PHASE4A="configs/phase4a_isolated.yaml"
 CFG_PHASE4B="configs/phase4b_fulltext.yaml"
 CFG_PHASE4C="configs/phase4c_conversational.yaml"
+CFG_PHASE4D="configs/phase4d_recovery.yaml"
+CFG_PHASE4M="configs/phase4_multitask.yaml"
 CFG_PHASE5="configs/phase5_package.yaml"
 
 # ─── mode (mini = smoke test, full = real run) ─────────────────────────── #
 MODE="${1:-full}"
 shift || true
-if [ $# -gt 0 ]; then PHASES=("$@"); else PHASES=(1 1b 2 3 4a 4b 4c 5); fi
+if [ $# -gt 0 ]; then PHASES=("$@"); else PHASES=(1 1b 2 3 4m 5); fi
 
 case "$MODE" in
   mini|full) ;;
@@ -93,7 +98,7 @@ echo "  ✓ uv: $(uv --version 2>&1)"
 
 # Determine if any GPU phase is running
 NEEDS_GPU=false
-for p in 3 4a 4b 4c; do has_phase "$p" && NEEDS_GPU=true; done
+for p in 3 4a 4b 4c 4d 4m; do has_phase "$p" && NEEDS_GPU=true; done
 
 if [ "$NEEDS_GPU" = true ]; then
   echo "  syncing deps (train group: torch/transformers/accelerate/wandb)..."
@@ -257,16 +262,80 @@ phase4c() {
   echo
 }
 
+# ─── Phase 4d: clean-text recovery (NEW) ────────────────────────────────── #
+phase4d() {
+  echo "━━━ Phase 4d: clean-text recovery (fix format contamination) → $STAGE_D ━━━"
+  if [ ! -d "$STAGE_C" ]; then
+    echo "✗ $STAGE_C not found — run phase 4c first" >&2; exit 1
+  fi
+  if [ "$(count_shards "$CLEAN_OUT")" -eq 0 ]; then
+    echo "✗ no shards in $CLEAN_OUT — run phase 1 first" >&2; exit 1
+  fi
+  if [ ! -f "notes/synth.json" ] || [ ! -f "notes/real.json" ]; then
+    echo "✗ notes/synth.json or notes/real.json not found — run phase 4a first" >&2; exit 1
+  fi
+  echo "  Fixes 100% format contamination: trains on 75% plain text + 25% triples"
+  echo "  to break 'plain text → <XBU>' association while preserving autocorrect"
+  local wb=()
+  if [ -n "$WANDB_PROJECT" ]; then wb=(--wandb-project "$WANDB_PROJECT"); fi
+  uv run python -m scripts.finetune.recovery \
+    --config "$CFG_PHASE4D" --mode "$MODE" \
+    --base "$STAGE_C" \
+    --tokenizer "$TOKENIZER" \
+    --corpus "$CLEAN_OUT" \
+    --synth-jsonl notes/synth.json \
+    --real-jsonl notes/real.json \
+    "${wb[@]}"
+  echo "  ✓ Stage D checkpoint at $STAGE_D/"
+  echo
+}
+
+# ─── Phase 4m: unified multi-task finetune (NEW — replaces 4a/4b/4c/4d) ──── #
+phase4m() {
+  echo "━━━ Phase 4m: unified multi-task finetune (from pretrain) → $STAGE_M ━━━"
+  if [ ! -d "$PRETRAIN_OUT/base" ]; then
+    echo "✗ $PRETRAIN_OUT/base not found — run phase 3 first" >&2; exit 1
+  fi
+  if [ "$(count_shards "$CLEAN_OUT")" -eq 0 ]; then
+    echo "✗ no shards in $CLEAN_OUT — run phase 1 first" >&2; exit 1
+  fi
+  if [ ! -f "notes/synth.json" ] || [ ! -f "notes/real.json" ]; then
+    echo "✗ notes/synth.json or notes/real.json not found — run phase 4a dataprep first" >&2; exit 1
+  fi
+  echo "  Unified multi-task: 60% plain text (PLW=1.0) + 40% isolated triples"
+  echo "  Starts from PRETRAIN (loss 4.33) — avoids format contamination"
+  local wb=()
+  if [ -n "$WANDB_PROJECT" ]; then wb=(--wandb-project "$WANDB_PROJECT"); fi
+  uv run python -m scripts.finetune.multitask \
+    --config "$CFG_PHASE4M" --mode "$MODE" \
+    --base "$PRETRAIN_OUT/base" \
+    --tokenizer "$TOKENIZER" \
+    --corpus "$CLEAN_OUT" \
+    --synth-jsonl notes/synth.json \
+    --real-jsonl notes/real.json \
+    "${wb[@]}"
+  echo "  ✓ Stage M checkpoint at $STAGE_M/"
+  echo
+}
+
 # ─── Phase 5: package to GGUF ──────────────────────────────────────────── #
 phase5() {
   echo "━━━ Phase 5: package to FUTO-compatible GGUF ━━━"
-  local ckpt="$STAGE_C"
+  local ckpt="$STAGE_M"
   if [ ! -d "$ckpt" ]; then
-    echo "  ⚠ $STAGE_C not found — falling back to $STAGE_B (skipping 4c)" >&2
-    ckpt="$STAGE_B"
+    ckpt="$STAGE_D"
+    echo "  ⚠ $STAGE_M not found — falling back to $STAGE_D (legacy recovery)" >&2
   fi
   if [ ! -d "$ckpt" ]; then
-    echo "✗ no finetune checkpoint found — run phases 4a/4b/4c first" >&2; exit 1
+    ckpt="$STAGE_C"
+    echo "  ⚠ $STAGE_D not found — falling back to $STAGE_C (skipping 4d)" >&2
+  fi
+  if [ ! -d "$ckpt" ]; then
+    ckpt="$STAGE_B"
+    echo "  ⚠ $STAGE_C not found — falling back to $STAGE_B (skipping 4c/4d)" >&2
+  fi
+  if [ ! -d "$ckpt" ]; then
+    echo "✗ no finetune checkpoint found — run phase 4m (or 4a/4b/4c) first" >&2; exit 1
   fi
   if [ ! -f "$TOKENIZER" ]; then
     echo "✗ $TOKENIZER not found — run phase 2 first" >&2; exit 1
@@ -294,6 +363,8 @@ for p in "${PHASES[@]}"; do
     4a) phase4a ;;
     4b) phase4b ;;
     4c) phase4c ;;
+    4d) phase4d ;;
+    4m) phase4m ;;
     5)  phase5  ;;
     *)  echo "unknown phase '$p' (use: 1 1b 2 3 4a 4b 4c 5)" >&2; exit 1 ;;
   esac
@@ -308,6 +379,8 @@ echo "  base checkpoint:     $([ -d "$PRETRAIN_OUT/base" ] && echo yes || echo n
 echo "  stage A (4a):        $([ -d "$STAGE_A" ] && echo yes || echo no)  ($STAGE_A)"
 echo "  stage B (4b):        $([ -d "$STAGE_B" ] && echo yes || echo no)  ($STAGE_B)"
 echo "  stage C (4c):        $([ -d "$STAGE_C" ] && echo yes || echo no)  ($STAGE_C)"
+echo "  stage D (4d):        $([ -d "$STAGE_D" ] && echo yes || echo no)  ($STAGE_D)"
+echo "  stage M (4m):        $([ -d "$STAGE_M" ] && echo yes || echo no)  ($STAGE_M)"
 # Show GGUF output path from config
 gguf_out=$(uv run python -c "from scripts.lib.runconfig import load_config, pick; cfg=load_config('$CFG_PHASE5','$MODE'); print(pick(None,cfg,'out','gguf/eu_futo_v2.gguf'))" 2>/dev/null || echo "gguf/eu_futo_v2.gguf")
 echo "  GGUF:                $([ -f "$gguf_out" ] && echo yes || echo no)  ($gguf_out)"

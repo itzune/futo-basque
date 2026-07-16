@@ -122,14 +122,20 @@ class EuShardStreamer(IterableDataset):
                     buffer.append(bos)
                     buffer.extend(sp.encode(ln, out_type=int))
                     buffer.append(eos)
-                    while len(buffer) >= self.seq_len + 1:
-                        ids = buffer[: self.seq_len + 1]
+                    while len(buffer) >= self.seq_len:
+                        ids = buffer[: self.seq_len]
                         del buffer[: self.seq_len]
-                        # CausalLM: input_ids = ids[:-1], labels = ids[1:]
-                        # (HF Trainer handles the shift internally if labels=input_ids)
+                        # input_ids and labels are the SAME sequence; HF
+                        # LlamaForCausalLM.forward applies the causal shift
+                        # internally when `labels` are passed. Pre-shifting here
+                        # (ids[:-1]/ids[1:]) caused a DOUBLE shift: the model
+                        # learned P(token[i+2] | token[i]) (skip-1), making it
+                        # functionally random for next-token prediction (inference
+                        # loss 8.0 vs 4.33 skip-1). Fixed to match finetune
+                        # datasets (fulltext.py / datasets.py).
                         yield {
-                            "input_ids": torch.tensor(ids[:-1], dtype=torch.long),
-                            "labels": torch.tensor(ids[1:], dtype=torch.long),
+                            "input_ids": torch.tensor(ids, dtype=torch.long),
+                            "labels": torch.tensor(ids, dtype=torch.long),
                         }
                 line_buffer.clear()
 

@@ -16,7 +16,9 @@ diffable, and reviewable.
 | `phase4a_dataprep.yaml` | 4a prep | Triple generation: n_synth, output paths |
 | `phase4a_isolated.yaml` | 4a | Isolated autocorrect: mix ratio, PLW, steps |
 | `phase4b_fulltext.yaml` | 4b | In-context autocorrect: typo rate, PLW, steps |
-| `phase4c_conversational.yaml` | 4c | **Conversational adaptation (NEW)**: BSM, low LR, steps |
+| `phase4c_conversational.yaml` | 4c | **Conversational adaptation**: BSM, low LR, steps |
+| `phase4d_recovery.yaml` | 4d | **Clean-text recovery (legacy)**: tried to fix contamination from stage_c — failed |
+| `phase4_multitask.yaml` | 4m | **Unified multi-task finetune (NEW)**: replaces 4a→4b→4c. 60/40 plain+triples from pretrain |
 | `phase5_package.yaml` | 5 | GGUF packaging: features, metadata, output path |
 
 ## Mode system

@@ -1,0 +1,58 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 4d: clean-text recovery finetune  (NEW — fixes format contamination) #
+#                                                                            #
+# PROBLEM: After 4a/4b/4c, the model ALWAYS emits <XBU> as top-1 after      #
+# plain text (100% format contamination). Next-word top-1 = 0%.              #
+#                                                                            #
+# ROOT CAUSE: Phase 4b's inline typo injection (33% of words → <XBU> triples)#
+# taught the model "plain text → <XBU>". PLW=0.05 didn't fully fix this.     #
+#                                                                            #
+# FIX: Train on a MIX of two data types, kept SEPARATE (not inline-mixed):   #
+#   1. Pure plain text (75%): NO <XBU> tokens, full loss (PLW=1.0)           #
+#      → teaches "plain context → plain word"                                #
+#   2. Isolated triples (25%): <XBU>…<XBC>correct<XEC>, correction-only loss #
+#      → preserves "autocorrect context → format"                            #
+#                                                                            #
+# By keeping them separate, we break the "plain text → <XBU>" association     #
+# while retaining autocorrect capability.                                    #
+#                                                                            #
+# INPUT:  finetune/stage_c/final/ + corpora/clean + notes/{synth,real}.json  #
+# OUTPUT: finetune/stage_d/final/                                            #
+# ────────────────────────────────────────────────────────────────────────── #
+
+dataset: clean               # Latxa v2 (corpora/clean) — pure plain text, no <XBU>
+
+# ── data mix ────────────────────────────────────────────────────────────── #
+# 75% plain text / 25% isolated triples. The plain text teaches next-word;
+# the triples preserve autocorrect. Kept SEPARATE (not inline-mixed like 4b)
+# to break the "plain text → <XBU>" contamination.
+plain_ratio: 0.75            # fraction of samples from pure plain text
+real_mix_ratio: 0.25         # within the 25% triples, fraction from real typos
+
+# ── loss ─────────────────────────────────────────────────────────────────── #
+# Plain text: all loss_weights = 1.0 (learn next-word on every token).
+# Triples: correction-span-only (PLW=0.0, same as Phase 4a).
+# (These are set per-sample in RecoveryDataset, not via a global --plw flag.)
+
+# ── training ─────────────────────────────────────────────────────────────── #
+seq_len: 512
+micro_batch: 24
+grad_accum: 8                # global batch = 192
+lr: 1.0e-5                   # LOWEST of all phases — gentle recovery, don't
+                             # catastrophically forget autocorrect
+warmup_steps: 200
+save_every: 1000
+save_total_limit: 3
+num_workers: 4
+seed: 1337
+
+# ── steps ────────────────────────────────────────────────────────────────── #
+# 3000 steps at global batch 192 × seq_len 512 = 98K tokens/step
+# ≈ 294M tokens-seen. With 75% plain, that's ~220M plain-text tokens —
+# enough to shift the next-word distribution, short enough to preserve
+# autocorrect (4a used 500K triples in 20K steps; we use far fewer).
+modes:
+  mini:
+    total_steps: 500         # ~3 min on L40 — quick smoke test
+  full:
+    total_steps: 3000        # ~20 min — full recovery finetune

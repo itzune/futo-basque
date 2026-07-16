@@ -1,0 +1,45 @@
+# Phase 4 (unified): Multi-task finetune from pretrain.
+#
+# REPLACES the old 4a → 4b → 4c sequential pipeline (which caused 100% format
+# contamination). Trains on a balanced 60/40 mix of plain text + isolated
+# triples, strictly segregated at the sequence level.
+#
+# Start from the PRETRAIN checkpoint (loss 4.33 — healthy plain-text model),
+# NOT from a contaminated stage_a/b/c checkpoint.
+#
+# See scripts/finetune/multitask.py docstring for full rationale.
+
+base: pretrain/base
+tokenizer: tokenizer/spm_eu.model
+corpus: corpora/clean              # Latxa v2 — pure plain text, no <XBU>
+synth_jsonl: notes/synth.json
+real_jsonl: notes/real.json
+
+# ── multi-task mix ──────────────────────────────────────────────────────── #
+plain_ratio: 0.60                  # 60% pure plain text (PLW=1.0, next-word)
+real_mix_ratio: 0.25               # of the 40% triples, 25% from real typos
+
+# ── training ───────────────────────────────────────────────────────────── #
+seq_len: 512
+micro_batch: 24
+grad_accum: 8                      # global batch 192
+warmup_steps: 200
+weight_decay: 0.01
+lr_scheduler_type: cosine
+num_workers: 4
+seed: 1337
+save_total_limit: 3
+
+# ── modes ───────────────────────────────────────────────────────────────── #
+modes:
+  mini:
+    total_steps: 1000             # ~8 min on L40 — quick validation
+    lr: 5.0e-5
+    save_every: 500
+    out: finetune/stage_m_mini
+
+  full:
+    total_steps: 18000           # ~2.5h — balanced multi-task training
+    lr: 5.0e-5                   # cosine → ~5e-6 over 18K steps
+    save_every: 2000
+    out: finetune/stage_m
