@@ -20,7 +20,7 @@ keyboard for next-word prediction **and** autocorrect via the
 If you just want to use Basque autocorrect + next-word prediction in FUTO
 Keyboard (no training required):
 
-1. Download [`eu_futo_v2.gguf`](https://github.com/xezpeleta/futo-basque/releases/latest/download/eu_futo_v2.gguf) (~49 MB)
+1. Download [`eu_futo_v2.gguf`](https://github.com/itzune/futo-basque/releases/latest/download/eu_futo_v2.gguf) (~49 MB)
 2. In FUTO Keyboard: **Settings → Languages & Models → Import model**
 3. Select the downloaded `.gguf` file
 

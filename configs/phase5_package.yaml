@@ -21,7 +21,7 @@ metadata:
   name: "Euskara v1"
   author: "Xabier Ezpeleta <xezpeleta@gmail.com>"
   license: MIT
-  url: "https://github.com/xezpeleta/futo-basque"
+  url: "https://github.com/itzune/futo-basque"
   description: >
     Basque (euskara) transformer language model for FUTO Keyboard.
     Trained on the Latxa corpus v2 (clean tier, 3B tokens) with a 4096-token

@@ -189,7 +189,7 @@ def main():
     description = pick(args.description, meta, "description",
                        "Basque (euskara) transformer language model for FUTO Keyboard.")
     license = pick(args.license, meta, "license", "MIT")
-    url = pick(args.url, meta, "url", "https://github.com/xezpeleta/futo-basque")
+    url = pick(args.url, meta, "url", "https://github.com/itzune/futo-basque")
 
     checkpoint = Path(args.checkpoint)
     sp_model = Path(args.tokenizer)

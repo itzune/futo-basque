@@ -129,7 +129,7 @@ def main():
                             "(conversational tier) with a 4096-token UNIGRAM SentencePiece "
                             "tokenizer optimized for Basque morphology.")
     ap.add_argument("--license", default="MIT")
-    ap.add_argument("--url", default="https://github.com/xezpeleta/futo-basque")
+    ap.add_argument("--url", default="https://github.com/itzune/futo-basque")
     args = ap.parse_args()
 
     in_path = Path(args.in_path)
