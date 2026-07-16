@@ -1,0 +1,61 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Dataset registry for futo-basque.                                          #
+#                                                                            #
+# This is the single source of truth for *what data exists* and *where it    #
+# lives*. Per-phase configs (phaseN_*.yaml) reference these by name.         #
+#                                                                            #
+# Data-strategy rationale: RESEARCH.md §11.4 (two-tier corpus) + §11.6       #
+# (revised: BSM → Phase 4c only, not pretrain).                              #
+# ────────────────────────────────────────────────────────────────────────── #
+
+# ── clean tier ──────────────────────────────────────────────────────────── #
+# Latxa corpus v2 (11 HiTZ-curated sources), already cleaned + deduplicated  #
+# by the morpheus-mamba project (data/clean-v3/).                            #
+#                                                                            #
+#   USED BY: tokenizer (Phase 2), pretrain (Phase 3), Phase 4b fulltext      #
+#   NOT USED BY: Phase 1b (that's BSM), Phase 4c (that's BSM)               #
+#                                                                            #
+# Quality-audited by morpheus (LLM per-source scoring, avg 4.6/5).           #
+# The 11 sources (from config/eu.py LATXA_SOURCES):                          #
+#   euscrawl-v2 (Q5.0), parleus (Q4.9), zelaihandi (Q4.9), bopv (Q4.8),      #
+#   botha (Q4.8), colossal-oscar (Q4.7), wikipedia (Q4.6), cultura-x (Q4.6), #
+#   hplt-v2 (Q4.4), fineweb2 (Q4.3), finepdfs (Q3.7)                         #
+# Excluded by morpheus: hplt-v1 (83.8% dup), bog (fragmented),               #
+#   aldizkariak (35% boilerplate)                                            #
+clean:
+  path: corpora/clean
+  source: morpheus-mamba/data/clean-v3
+  hf_fallback: HiTZ/latxa-corpus-v2
+  total_available_tokens: 4_770_000_000  # ~4.77B across all 11 sources
+
+# ── conversational tier ─────────────────────────────────────────────────── #
+# BERnaT BSMtime (Basque Social Media), aggressively cleaned by Phase 1b.    #
+#                                                                            #
+#   USED BY: Phase 4c conversational adaptation ONLY                         #
+#   NOT USED BY: tokenizer (Phase 2), pretrain (Phase 3) — per §11.6         #
+#                                                                            #
+# BSMtime (not BSMauthor): BSMtime = individual posts (11M rows, 34-280      #
+# chars each); BSMauthor = same posts concatenated into 91KB author          #
+# timelines (incompatible with line-level cleaning). Using both = pure       #
+# duplication.                                                               #
+#                                                                            #
+# Re-included despite morpheus's exclusion because the BERnaT paper          #
+# (Azurmendi et al. 2025, arXiv:2512.03903 — same HiTZ group) shows diverse  #
+# data helps without hurting standard-form accuracy. FUTO is a phone         #
+# keyboard (deployment = chat). FUTO's own wiki calls conversational          #
+# adaptation "an important step" (§11.6.1).                                  #
+conversational:
+  path: corpora/conversational
+  source: HiTZ/BERnaT-Diverse
+  hf_config: BSMtime
+  total_available_tokens: 250_000_000  # ~250M
+  cleaning:
+    strip_emoji: true
+    strip_urls: true
+    strip_mentions: true
+    strip_hashtag_symbol: true    # keep the word, drop '#'
+    strip_rt_prefix: true
+    decode_html_entities: true
+    max_spanish_ratio: 0.15       # drop code-switched lines (§11.4.2)
+    min_words: 3
+    drop_duplicates: true

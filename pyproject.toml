@@ -1,0 +1,46 @@
+[project]
+name = "futo-basque"
+version = "1.0.0"
+description = "Train a Transformer LM for Basque (euskara) compatible with FUTO Keyboard's Transformer LM system"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    # Core pipeline: corpus, tokenizer, GGUF packaging, reference inspection.
+    # These run fine on a CPU dev machine.
+    "sentencepiece>=0.2.0",
+    "protobuf>=5.0.0",
+    "numpy>=1.26",
+    "gguf>=0.10.0",
+    "datasets>=3.0.0",
+    "huggingface_hub>=0.26.0",
+    "tqdm>=4.66",
+    "pyyaml>=6.0",   # run-config loader (scripts/lib/runconfig.py)
+]
+
+[dependency-groups]
+# Training / eval stack (torch + HF). Heavy; only needed on the GPU host.
+#   uv sync --group train        # install everything (core + train)
+#   uv sync                      # core only (CPU dev machine)
+train = [
+    "torch>=2.4.0",
+    "transformers>=4.46.0",
+    "accelerate>=1.0.0",
+    "wandb>=0.18.0",
+]
+dev = [
+    "ruff>=0.7.0",
+]
+
+[tool.uv]
+# Default behaviour installs only [project.dependencies] (core). To pull in the
+# training stack on a CUDA host, either:
+#   uv sync --group train
+# or uncomment the CUDA index below so `torch` resolves to a CUDA wheel:
+#
+# [[tool.uv.index]]
+# name = "pytorch-cu121"
+# url = "https://download.pytorch.org/whl/cu121"
+# explicit = true
+#
+# [tool.uv.sources]
+# torch = [{ index = "pytorch-cu121", marker = "sys_platform == 'linux'" }]

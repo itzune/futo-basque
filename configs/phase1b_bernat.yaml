@@ -1,0 +1,23 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 1b: clean + stage BERnaT BSM (conversational tier).                  #
+#                                                                            #
+# Aggressively cleans social-media noise (emoji/URL/mention/code-switch)     #
+# from BERnaT BSMtime, producing corpora/conversational/shard_*.txt.         #
+#                                                                            #
+# OUTPUT: corpora/conversational/shard_*.txt                                 #
+# USED BY: Phase 4c conversational adaptation ONLY                           #
+# EXCLUDED FROM: tokenizer (Phase 2), pretrain (Phase 3) — per §11.6         #
+# ────────────────────────────────────────────────────────────────────────── #
+
+dataset: conversational
+from_hf: true            # stream BSMtime from HiTZ/BERnaT-Diverse
+shard_bytes: 268435456   # 256 MiB per shard
+
+# Token budget for the conversational tier.
+# This is ~5-8% of the clean tier — small enough to be a "finetune" not a
+# "pretrain", large enough to shift the model's register toward chat.
+modes:
+  mini:
+    target_tokens: 25_000_000     # 25M — validate the cleaning pipeline
+  full:
+    target_tokens: 250_000_000    # 250M — full BSM for Phase 4c

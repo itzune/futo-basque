@@ -1,0 +1,40 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 5: package to FUTO-compatible GGUF.                                  #
+#                                                                            #
+# Converts the HF checkpoint → vanilla GGUF → patches keyboardlm.* metadata  #
+# → downgrades to GGUF v2 (FUTO requires v2, not v3 — gotcha #3).            #
+#                                                                            #
+# INPUT:  finetune/stage_c/final/ + tokenizer/spm_eu.model                   #
+# OUTPUT: gguf/eu_futo_v2.gguf                                               #
+# ────────────────────────────────────────────────────────────────────────── #
+
+# ── FUTO keyboardlm.* metadata ──────────────────────────────────────────── #
+languages: eu
+# char_embed_mixing_v1 is REQUIRED with xbu_char_autocorrect_v1 —
+# without it the FUTO app SIGSEGVs at inference (gotcha #2).
+# Omitted: xc0_swipe_typing_v1 (no swipe training data for v1;
+# XC0-XC4 tokens remain in vocab but unused).
+features: "base_v1 inverted_space xbu_char_autocorrect_v1 char_embed_mixing_v1"
+
+# ── general.* metadata (read by FUTO app, not displayed in UI — §11.6) ───── #
+metadata:
+  name: "Euskara v1"
+  author: "Xabier Ezpeleta <xezpeleta@gmail.com>"
+  license: MIT
+  url: "https://github.com/xezpeleta/futo-basque"
+  description: >
+    Basque (euskara) transformer language model for FUTO Keyboard.
+    Trained on the Latxa corpus v2 (clean tier, 3B tokens) with a 4096-token
+    UNIGRAM SentencePiece tokenizer optimized for Basque morphology, then
+    fine-tuned for autocorrect (4a/4b) and conversational adaptation (4c,
+    BERnaT BSM social media).
+
+# ── GGUF output ──────────────────────────────────────────────────────────── #
+gguf_version: 2              # FUTO requires v2 (gotcha #3)
+quantization: f16            # convert_hf_to_gguf.py --outtype
+
+modes:
+  mini:
+    out: gguf/eu_futo_mini_v2.gguf
+  full:
+    out: gguf/eu_futo_v2.gguf

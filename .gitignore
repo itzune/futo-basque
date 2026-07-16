@@ -1,0 +1,42 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- uv / venv ---
+.venv/
+.env
+
+# --- Large generated artifacts (never commit) ---
+# Anchored to repo root (/) so they don't match scripts/pretrain/ etc.
+/corpora/
+/pretrain/
+/finetune/
+/gguf/
+tokenizer/*.model
+tokenizer/*.vocab
+tokenizer/*.user_defined.json
+
+# Reference English model + extracted tokenizer (downloaded, ~150 MB)
+reference_model/*.gguf
+reference_model/extracted_spm.model
+reference_model/.cache/
+
+# Generated notes (dumps, diffs, eval results) — keep the dir via .gitkeep
+notes/*.txt
+notes/*.json
+notes/*.md
+
+# --- wandb / training logs ---
+wandb/
+runs/
+*.log
+full_run*.log
+nohup.out
+
+# --- OS ---
+.DS_Store
+Thumbs.db

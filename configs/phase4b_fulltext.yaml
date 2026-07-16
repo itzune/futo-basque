@@ -1,0 +1,49 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 4b: in-context autocorrect finetune.                                #
+#                                                                            #
+# Takes CLEAN corpus sentences, injects ~33% typo triples inline, and        #
+# trains full-sequence loss so the model learns autocorrect *in context*     #
+# (not just isolated words like Phase 4a).                                   #
+#                                                                            #
+# INPUT:  finetune/stage_a/final/ + corpora/clean                            #
+# OUTPUT: finetune/stage_b/final/                                            #
+# ────────────────────────────────────────────────────────────────────────── #
+
+dataset: clean               # clean tier (Latxa) — NOT conversational
+
+# ── typo injection ───────────────────────────────────────────────────────── #
+# FUTO wiki target: ~1/3 of words replaced by <XBU>typo<XBC>correct<XEC>.
+typo_rate: 0.33
+
+# ── loss ─────────────────────────────────────────────────────────────────── #
+# PLW (Prompt Loss Weight) for clean (non-XBU-span) tokens.
+# Loss is on shifted tokens (predict t+1 from t). Spans (<XBU>..<XEC>) always
+# get weight 1.0; clean context gets plw. This means plw controls:
+#   - clean→clean transitions (next-word prediction)
+#   - clean→<XBU> transitions (start of correction — the format-overfit source)
+#   1.0  = full-sequence loss (mini default; caused 0% next-word in mini eval)
+#   0.05 = arxiv 2401.13586 recommendation — preserve pretrain next-word ability,
+#          reduce format overfit. Spans (autocorrect) still get full weight.
+# Proactive mitigation (reviewer feedback): mini showed 0% next-word (format
+# overfit). Full run's stronger pretrain (6.3B vs 524M) helps, but finetune is
+# still ~27% of total tokens. Lowering plw directly targets the failure mode:
+# the clean→<XBU> transition that causes the model to emit structural tokens
+# in next-word mode.
+plw: 0.05
+
+# ── training ─────────────────────────────────────────────────────────────── #
+seq_len: 512
+micro_batch: 24
+grad_accum: 8                 # global batch = 192
+lr: 5.0e-5
+warmup_steps: 1000
+save_every: 2000
+save_total_limit: 3
+num_workers: 4
+seed: 1337
+
+modes:
+  mini:
+    total_steps: 2000         # ~14 min on L40
+  full:
+    total_steps: 15000        # ~1.5h — thorough in-context training

@@ -1,0 +1,38 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 4a: isolated <XBU>typo<XBC>correct<XEC> finetune.                   #
+#                                                                            #
+# Streams typo→correct pairs (synth + real), formats each as the FUTO        #
+# keypress autocorrect triple, and trains the model to emit the corrected    #
+# word. This is where the model learns the XBU/CHAR/XBC/XEC format.          #
+#                                                                            #
+# INPUT:  pretrain/base/ + notes/synth.json + notes/real.json                #
+# OUTPUT: finetune/stage_a/final/                                            #
+# ────────────────────────────────────────────────────────────────────────── #
+
+# ── dataset mix ──────────────────────────────────────────────────────────── #
+synth_jsonl: notes/synth.json
+real_jsonl: notes/real.json
+real_mix_ratio: 0.25          # 25% real shortcuts, 75% synthetic typos
+
+# ── loss ─────────────────────────────────────────────────────────────────── #
+# PLW (Prompt Loss Weight) for clean (non-correction) tokens.
+#   0.0  = full mask (only the correction span contributes to loss — historical)
+#   0.05 = relaxed mask per arxiv 2401.13586 (small positive weight on clean tokens)
+plw: 0.0
+
+# ── training ─────────────────────────────────────────────────────────────── #
+seq_len: 64                   # triples are short (one word + format tokens)
+micro_batch: 64
+grad_accum: 4                 # global batch = 256
+lr: 1.0e-4
+warmup_steps: 500
+save_every: 2000
+save_total_limit: 3
+num_workers: 2
+seed: 1337
+
+modes:
+  mini:
+    total_steps: 2000         # ~4 min on L40 — validates the format learning
+  full:
+    total_steps: 20000        # ~40 min — thorough autocorrect training

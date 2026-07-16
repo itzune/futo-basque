@@ -1,0 +1,23 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 1: stage the clean tier (Latxa corpus v2) from morpheus clean-v3.    #
+#                                                                            #
+# Data is already cleaned + deduplicated by morpheus — we stage as-is        #
+# (no re-cleaning, only skip empty lines). Undoing morpheus's work would     #
+# degrade quality.                                                           #
+#                                                                            #
+# OUTPUT: corpora/clean/shard_*.txt (256 MiB shards)                         #
+# USED BY: tokenizer (Phase 2), pretrain (Phase 3), Phase 4b                 #
+# ────────────────────────────────────────────────────────────────────────── #
+
+dataset: clean
+morpheus_dir: ../morpheus-mamba
+shard_bytes: 268435456   # 256 MiB per shard
+
+# Token budget — how much of the 4.77B available to stage.
+# REVISED (§11.6): 3B for full (not 5B). Our 25M model's sweet spot is
+# 80-120:1 tokens-seen:params; staging 3B + ~2 epochs of pretrain ≈ 6B seen.
+modes:
+  mini:
+    target_tokens: 500_000_000    # 500M — representative sample, all 11 sources
+  full:
+    target_tokens: 3_000_000_000  # 3B — ~63% of available 4.77B

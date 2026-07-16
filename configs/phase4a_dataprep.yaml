@@ -1,0 +1,20 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 4a data prep: generate typo→correct JSON files.                     #
+#                                                                            #
+# Produces synth.json (synthetic typos from wordfreq) + real.json (known     #
+# shortcut→full-form pairs from config/eu.py EU_SHORTCUTS).                  #
+#                                                                            #
+# OUTPUT: notes/synth.json + notes/real.json                                 #
+# ────────────────────────────────────────────────────────────────────────── #
+
+# Word-frequency source: built from corpora/clean by build_wordfreq.py.
+wordfreq: notes/wordfreq.json
+out_synth: notes/synth.json
+out_real: notes/real.json
+n_synth: 200000             # synthetic typo→correct pairs, log(freq+1)-weighted
+
+modes:
+  mini:
+    n_synth: 200000         # same — fast to generate even for mini
+  full:
+    n_synth: 500000         # more coverage for the full finetune

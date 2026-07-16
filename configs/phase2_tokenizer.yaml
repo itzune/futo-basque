@@ -1,0 +1,38 @@
+# ────────────────────────────────────────────────────────────────────────── #
+# Phase 2: train the SentencePiece UNIGRAM tokenizer.                        #
+#                                                                            #
+# Trained on the CLEAN tier ONLY (corpora/clean) — NEVER on conversational.  #
+# This keeps the UNIGRAM vocabulary morpheme-focused on standard batua       #
+# (§11.4 scoping rule). BSM's dialect/argot would pollute the vocab.         #
+#                                                                            #
+# OUTPUT: tokenizer/spm_eu.{model,vocab} + spm_eu.user_defined.json          #
+# ────────────────────────────────────────────────────────────────────────── #
+
+dataset: clean            # clean tier only
+
+# ── vocab size: 4096 (NOT the reference's 15008) ────────────────────────── #
+# Basque is agglutinative. A large vocab memorizes inflected forms (etxea,  #
+# etxera, etxetik) as single tokens, hiding morpheme boundaries.            #
+# morpheus ablation (21 Basque test words):                                  #
+#   4K → 66.7% MorphAcc   8K → 61.9%   16K → 52.4%   32K → 28.6%            #
+# FUTO has 560 reserved slots, so 4096 gives 3536 learned pieces.           #
+# See RESEARCH.md §11.3.1 (the fertility paradox).                          #
+vocab_size: 4096
+
+# ── SentencePiece parameters (all match the reference English model) ────── #
+model_type: unigram                    # not BPE — probabilistic, better for agglutinative
+character_coverage: 0.9995
+byte_fallback: true                   # 256 byte-fallback tokens at IDs 304-559
+treat_whitespace_as_suffix: true      # the `inverted_space` feature
+add_dummy_prefix: false               # match reference — no leading ▁ before <XBC> word
+remove_extra_whitespaces: false       # match reference — preserve original whitespace
+pad_id: 0
+bos_id: 1
+eos_id: 2
+unk_id: 3
+input_sentence_size: 10_000_000       # sample this many sentences for training
+shuffle_input_sentence: true
+
+modes:
+  mini:
+    input_sentence_size: 1_000_000    # 1M sentences → faster training (smoke test)
