@@ -98,7 +98,7 @@ echo "  ✓ uv: $(uv --version 2>&1)"
 
 # Determine if any GPU phase is running
 NEEDS_GPU=false
-for p in 3 4a 4b 4c 4d 4m 4mr; do has_phase "$p" && NEEDS_GPU=true; done
+for p in 3 4a 4b 4c 4d 4m 4mr 5; do has_phase "$p" && NEEDS_GPU=true; done
 
 if [ "$NEEDS_GPU" = true ]; then
   echo "  syncing deps (train group: torch/transformers/accelerate/wandb)..."
