@@ -26,18 +26,17 @@ Keyboard (no training required):
 2. In FUTO Keyboard: **Settings → Languages & Models → Import model**
 3. Select the downloaded `.gguf` file
 
-**Results** (v2.0.0 — full model, 25M params, 3B pretrain tokens):
+**Results** (25M params, 3B pretrain tokens):
 
-| Metric | v1.0.0 (broken) | **v2.0.0** | morpheus (reference) |
-|--------|:---:|:---:|:---:|
-| Next-word top-1 | 0% | **50.0%** | 43.8% |
-| Next-word top-5 | 0% | **41.7%** | 75.0% |
-| Objective (next-token loss) | 7.6 | **2.3–3.5** | — |
-| Format contamination | 100% | **0%** | — |
+| Metric | Score |
+|--------|:---:|
+| Next-word top-1 | **50.0%** |
+| Next-word top-5 | **41.7%** |
+| Objective (next-token loss) | 2.3–3.5 |
+| Format contamination | 0% |
 
-v2.0.0 **beats morpheus on top-1 next-word** (50% vs 43.8%) and generates
-clean Basque (`ikasten`, `zait`, `izango`, `da`) with no control-token
-contamination.
+The model generates clean Basque (`ikasten`, `zait`, `izango`, `da`) with no
+control-token contamination.
 
 > **Note on autocorrect:** standalone GGUF eval in FUTO control-token format
 > (`keyboard.py`) scores 0% on autocorrect — the model learned plain-text
@@ -225,9 +224,8 @@ A controlled ablation in our sibling project [`morpheus-mamba`](https://github.c
 | ~32K | 28.6% | `etxetik → ▁etxetik` ❌ whole-word |
 
 FUTO has 560 reserved slots, so vocab=4096 gives 3536 learned pieces — matching the
-4K MorphAcc regime. The 36M model is smaller than morpheus's 91M, so morpheme splitting
-helps even more (less capacity to waste on surface forms). The 2048 context window
-easily absorbs the 39% fertility increase (2.58 vs 1.85 tokens/word).
+4K MorphAcc regime. The 2048 context window easily absorbs the 39% fertility
+increase (2.58 vs 1.85 tokens/word).
 
 The FUTO app reads vocab size dynamically (`llama_n_vocab()`), so this is fully
 compatible — no hardcoding. The tokenizer training script includes a MorphAcc
@@ -270,11 +268,10 @@ spot-check that warns if splitting degrades.
 - [x] Mini validation: full pipeline (1→5) runs end-to-end, model works in FUTO app
 - [x] Full pretrain: 24,000 steps (10h) on 3B tokens from Latxa v2 clean tier
 - [x] **Pretrain bug fix** (`a377081`): resolved double causal-shift — root cause of
-      v1.0.0's 0% next-word. Diagnostic confirmed: skip-1 loss 3.8 < next-token 7.6.
+      broken next-word prediction. Diagnostic confirmed: skip-1 loss 3.8 < next-token 7.6.
 - [x] **Unified multi-task finetune** (4m): 18k steps, 60% plain + 40% triples
 - [x] **Diagnostic tooling**: objective diagnostic (`diag_objective.py`),
       next-word eval (`nextword_pretrain.py`), loss diagnostic (`diag_4m_loss.py`)
-- [x] **v2.0.0 released**: 50% next-word top-1 (beats morpheus's 43.8%), 0% contamination
+- [x] **v2.0.0 released**: 50% next-word top-1, 0% contamination
 - [ ] Basque dictionary wordlist (`eu_wordlist.combined.gz`) for FUTO's dictionary engine
-- [ ] Re-run `compare_inference.py` on v2 GGUF vs morpheus for apples-to-apples comparison
 - [ ] Increase triple ratio in 4m to improve FUTO-format autocorrect (currently 0% standalone)
