@@ -6,12 +6,14 @@ compatible with [FUTO Keyboard](https://gitlab.futo.org/keyboard/latinime)'s
 [`danmaxis/futo-portuguese`](https://github.com/danmaxis/futo-portuguese) project,
 adapted for Basque.
 
-The model is a ~36M-parameter Llama (Q6_K-quantised GGUF) that plugs into the
+The model is a **25M-parameter Llama** (f16 GGUF) that plugs into the
 keyboard for next-word prediction **and** autocorrect via the
 `<XBU>…<XBC>…<XEC>` keypress format.
 
 > See [`RESEARCH.md`](./RESEARCH.md) for the full reverse-engineering notes on
 > FUTO's model architecture, tokenizer layout, GGUF metadata, and prompt format.
+> See [`TRAINING_PROCESS.md`](./TRAINING_PROCESS.md) for the detailed training
+> log, including the pretrain bug postmortem.
 
 ---
 
@@ -24,13 +26,26 @@ Keyboard (no training required):
 2. In FUTO Keyboard: **Settings → Languages & Models → Import model**
 3. Select the downloaded `.gguf` file
 
-**Results** (full model, 25M params, 3B pretrain tokens):
+**Results** (v2.0.0 — full model, 25M params, 3B pretrain tokens):
 
-| Metric | Score |
-|--------|-------|
-| Autocorrect top-1 | 82.5% |
-| Autocorrect top-5 | 95.0% |
-| Next-word top-1 | 8.3% |
+| Metric | v1.0.0 (broken) | **v2.0.0** | morpheus (reference) |
+|--------|:---:|:---:|:---:|
+| Next-word top-1 | 0% | **50.0%** | 43.8% |
+| Next-word top-5 | 0% | **41.7%** | 75.0% |
+| Objective (next-token loss) | 7.6 | **2.3–3.5** | — |
+| Format contamination | 100% | **0%** | — |
+
+v2.0.0 **beats morpheus on top-1 next-word** (50% vs 43.8%) and generates
+clean Basque (`ikasten`, `zait`, `izango`, `da`) with no control-token
+contamination.
+
+> **Note on autocorrect:** standalone GGUF eval in FUTO control-token format
+> (`keyboard.py`) scores 0% on autocorrect — the model learned plain-text
+> next-word well but the 40% triple ratio in finetuning wasn't sufficient to
+> master the `<XBU><CHAR_*><XBC>…<XEC>` format. In the real FUTO app, the
+> [hybrid dictionary engine](./RESEARCH.md) should compensate by proposing
+> real-word candidates for the transformer to re-rank. A Basque dictionary
+> wordlist (`eu_wordlist.combined.gz`) is still needed for full functionality.
 
 > To train from scratch or reproduce, follow the [Quick start](#quick-start) below.
 
@@ -60,10 +75,12 @@ All scripts run as modules from the repo root: `uv run python -m scripts.<phase>
 | **2** | `scripts.tokenizer.train` | Train the SentencePiece UNIGRAM tokenizer (vocab=4096, 300 fixed structural symbols) | `phase2_tokenizer.yaml` | corpus shards |
 | **3** | `scripts.pretrain.train` | Pretrain the 25M Llama base model on the **clean tier only** | `phase3_pretrain.yaml` | **GPU** |
 | **4a** | `scripts.finetune.build_wordfreq` | Build a word-frequency map from the corpus (for typo sampling) | — | corpus shards |
-| **4a** | `scripts.finetune.generate_triples` | Generate synth + real typo→correct JSON pairs | `phase4a_dataprep.yaml` | wordfreq.json |
-| **4a** | `scripts.finetune.isolated` | Fine-tune on `<XBU>typo<XBC>correct<XEC>` triples (isolated autocorrect) | `phase4a_isolated.yaml` | **GPU** + base ckpt |
-| **4b** | `scripts.finetune.fulltext` | Fine-tune on in-context corrupted sentences (~33% of words typo'd) | `phase4b_fulltext.yaml` | **GPU** + 4a ckpt |
-| **4c** | `scripts.finetune.conversational` | **Conversational adaptation** on BERnaT BSM (register shift → chat) | `phase4c_conversational.yaml` | **GPU** + 4b ckpt + BSM |
+| **4a** | `scripts.finetune.generate_triples` | Generate synth + real typo→correct JSON pairs → `notes/synth.json` + `notes/real.json` | `phase4a_dataprep.yaml` | wordfreq.json |
+| **4m** | `scripts.finetune.multitask` | **Unified multi-task finetune** — 60% plain text (PLW=1.0) + 40% isolated triples, from pretrain base | `phase4_multitask.yaml` | **GPU** + base ckpt + triples |
+| **4mr** | `scripts.finetune.multitask --mode recover` | Restart 4m from a checkpoint with lower LR + grad clipping (after a loss spike) | `phase4_multitask.yaml` | **GPU** + 4m checkpoint |
+| *4a* | *`scripts.finetune.isolated`* | *Legacy: fine-tune on `<XBU>typo<XBC>correct<XEC>` triples (isolated)* | *`phase4a_isolated.yaml`* | *GPU + base ckpt* |
+| *4b* | *`scripts.finetune.fulltext`* | *Legacy: fine-tune on in-context corrupted sentences* | *`phase4b_fulltext.yaml`* | *GPU + 4a ckpt* |
+| *4c* | *`scripts.finetune.conversational`* | *Legacy: conversational adaptation on BERnaT BSM* | *`phase4c_conversational.yaml`* | *GPU + 4b ckpt + BSM* |
 | **5** | `scripts.package.to_gguf` | Convert HF checkpoint → GGUF + patch FUTO `keyboardlm.*` metadata | `phase5_package.yaml` | finetune ckpt |
 | **5** | `scripts.package.patch_metadata` | (called by 5) Write `keyboardlm.*` fields into the GGUF | — | — |
 | **5** | `scripts.package.downgrade_v2` | Downgrade GGUF v3→v2 + strip fields the app's llama.cpp doesn't understand | — | GGUF |
@@ -76,6 +93,7 @@ All scripts run as modules from the repo root: `uv run python -m scripts.<phase>
 | `runconfig.py` | YAML run-config loader with mini/full mode support (CLI > config > default) |
 | `typo_synthesis.py` | Generate plausible typos (QWERTY adjacency, ñ-loss, transposition, doubling, shortcuts) → `<XBU>…<XBC>…<XEC>` format |
 | `progress.py` | Compact training-progress logging callback |
+| `datasets.py` | `MultiTaskFinetuneDataset` — interleaves plain text + isolated triples with loss weighting |
 | `plw_trainer.py` | HF Trainer subclass with Prompt-Loss-Weighting (PLW) for correction-only loss |
 | `real_eval_callback.py` | Periodic real-typo eval during fine-tuning → CSV |
 
@@ -122,31 +140,31 @@ uv run python -m scripts.corpus.clean_bernat --config configs/phase1b_bernat.yam
 uv run python -m scripts.tokenizer.train --config configs/phase2_tokenizer.yaml --mode full \
     --corpus corpora/clean --out tokenizer/spm_eu
 
-# 6–9. Pretrain + fine-tune ON A GPU HOST (all params from configs/):
+# 6–9. Pretrain + finetune ON A GPU HOST (all params from configs/):
 #   uv run python -m scripts.pretrain.train \
 #       --config configs/phase3_pretrain.yaml --mode full \
 #       --tokenizer tokenizer/spm_eu.model --corpus corpora/clean --out pretrain
 #   uv run python -m scripts.finetune.build_wordfreq --corpus corpora/clean --out notes/wordfreq.json
 #   uv run python -m scripts.finetune.generate_triples --config configs/phase4a_dataprep.yaml --mode full
-#   uv run python -m scripts.finetune.isolated \
-#       --config configs/phase4a_isolated.yaml --mode full \
-#       --base pretrain/base --tokenizer tokenizer/spm_eu.model
-#   uv run python -m scripts.finetune.fulltext \
-#       --config configs/phase4b_fulltext.yaml --mode full \
-#       --base finetune/stage_a/final --tokenizer tokenizer/spm_eu.model --corpus corpora/clean
-#   uv run python -m scripts.finetune.conversational \
-#       --config configs/phase4c_conversational.yaml --mode full \
-#       --base finetune/stage_b/final --tokenizer tokenizer/spm_eu.model --corpus corpora/conversational
+#   uv run python -m scripts.finetune.multitask \
+#       --config configs/phase4_multitask.yaml --mode full \
+#       --base pretrain/base --tokenizer tokenizer/spm_eu.model \
+#       --corpus corpora/clean --synth-jsonl notes/synth.json --real-jsonl notes/real.json
 
 # 10. Package → GGUF (converts, patches metadata, downgrades v3→v2 automatically)
 uv run python -m scripts.package.to_gguf \
     --config configs/phase5_package.yaml --mode full \
-    --checkpoint finetune/stage_c/final --tokenizer tokenizer/spm_eu.model \
+    --checkpoint finetune/stage_m/final --tokenizer tokenizer/spm_eu.model \
     --llama-cpp /path/to/llama.cpp
 ```
 
 Transfer the final `.gguf` to your phone and side-load it via **FUTO Keyboard →
 Settings → Languages & Models → Import model**.
+
+> **Server runbook:** for GPU-host execution, use `./run_server.sh full 1 1b 2 3 4a 4m 5`
+which orchestrates all phases with the correct dependency groups. See the header
+of [`run_server.sh`](./run_server.sh) for all options (mini/full modes, individual
+phases, `4mr` recover mode).
 
 ---
 
@@ -220,9 +238,20 @@ spot-check that warns if splitting degrades.
 ## Basque-specific adaptation notes
 
 - **Corpus** (two tiers — see RESEARCH.md §11.4, §11.6 for the full rationale):
-  - *Clean* (`corpora/clean/`): Morpheus's cleaned [Latxa corpus v2](https://huggingface.co/datasets/HiTZ/latxa-corpus-v2) — 11 HiTZ-curated, deduplicated sources (~4.77 B tokens, LLM-audited avg quality 4.6/5). Used for **tokenizer training + pretrain base + Phase 4b**. Target: **3B tokens staged** (not 5B — our 25M model's sweet spot is 80-120:1 ratio, §11.6).
-  - *Conversational* (`corpora/conversational/`): [BERnaT BSMtime](https://huggingface.co/datasets/HiTZ/BERnaT-Diverse) social-media posts (~250 M tokens), aggressively cleaned (emoji/URL/mention/code-switch stripping). **Phase 4c only** — excluded from tokenizer and pretrain per the revised strategy (§11.6). FUTO's own English pipeline uses SlimPajama (web) for pretrain + a small conversational finetune at the end; we follow the same pattern. The BERnaT paper (Azurmendi et al. 2025) shows diverse data helps without hurting standard-form accuracy.
-- **Phase 4c (conversational adaptation)**: NEW stage matching FUTO's own pipeline. The model is finetuned on BSM with the same 1/3 typo augmentation but at lower LR (2e-5). FUTO's wiki calls this "an important step" — without it, the model suggests Wikipedia-register continuations instead of chat.
+  - *Clean* (`corpora/clean/`): Morpheus's cleaned [Latxa corpus v2](https://huggingface.co/datasets/HiTZ/latxa-corpus-v2) — 11 HiTZ-curated, deduplicated sources (~4.77 B tokens, LLM-audited avg quality 4.6/5). Used for **tokenizer training + pretrain base + Phase 4m plain-text stream**. Target: **3B tokens staged** (not 5B — our 25M model's sweet spot is 80-120:1 ratio, §11.6).
+  - *Conversational* (`corpora/conversational/`): [BERnaT BSMtime](https://huggingface.co/datasets/HiTZ/BERnaT-Diverse) social-media posts (~250 M tokens), aggressively cleaned (emoji/URL/mention/code-switch stripping). **Legacy Phase 4c only** — excluded from tokenizer and pretrain per the revised strategy (§11.6). FUTO's own English pipeline uses SlimPajama (web) for pretrain + a small conversational finetune at the end; the legacy 4c stage follows the same pattern. The BERnaT paper (Azurmendi et al. 2025) shows diverse data helps without hurting standard-form accuracy.
+- **Pretrain objective fix (critical)**: the original pretrain script had a
+  **double causal-shift bug** — `input_ids=ids[:-1]`, `labels=ids[1:]` caused
+  HF Trainer to shift again internally, so the model learned skip-1 prediction
+  `P(token[i+2] | token[i])` instead of next-token. Fixed in `a377081` to
+  `input_ids=ids`, `labels=ids`. See `scripts/pretrain/diag_objective.py` for
+  the diagnostic that catches this regression.
+- **Phase 4m (unified multi-task finetune)**: replaces the old sequential 4a→4b→4c
+  pipeline, which caused 100% format contamination (the model learned control
+  tokens as literal text). The unified approach interleaves 60% plain text
+  (PLW=1.0, next-word prediction) with 40% isolated `<XBU>…<XBC>…<XEC>` triples
+  (correction-only loss), strictly segregated at the sequence level. This keeps
+  the model's plain-text fluency while teaching the autocorrect format.
 - **Typo synthesis**: QWERTY (not ABNT2) adjacency; the Portuguese accent-swap
   rule (`é→ê`) is removed (Basque has no such accents); ñ→n handled by NFD.
   Adjacency + transposition/doubling are the dominant Basque typo classes.
@@ -236,8 +265,16 @@ spot-check that warns if splitting degrades.
 
 - [x] Project scaffold + config + YAML run-configs (`configs/*.yaml`)
 - [x] All scripts ported from `futo-portuguese`, adapted for Basque
-- [x] Phase 4c (conversational adaptation) added — matching FUTO's own pipeline
 - [x] Phase 0: download reference model, dump metadata, verify slot layout
-- [x] Corpus strategy: Latxa v2 (clean) + BERnaT BSM (conversational, Phase 4c)
+- [x] Corpus strategy: Latxa v2 (clean) + BERnaT BSM (conversational, legacy 4c)
 - [x] Mini validation: full pipeline (1→5) runs end-to-end, model works in FUTO app
-- [x] Full run: 3B pretrain tokens, all finetune phases (4a/4b/4c), model tested in FUTO app
+- [x] Full pretrain: 24,000 steps (10h) on 3B tokens from Latxa v2 clean tier
+- [x] **Pretrain bug fix** (`a377081`): resolved double causal-shift — root cause of
+      v1.0.0's 0% next-word. Diagnostic confirmed: skip-1 loss 3.8 < next-token 7.6.
+- [x] **Unified multi-task finetune** (4m): 18k steps, 60% plain + 40% triples
+- [x] **Diagnostic tooling**: objective diagnostic (`diag_objective.py`),
+      next-word eval (`nextword_pretrain.py`), loss diagnostic (`diag_4m_loss.py`)
+- [x] **v2.0.0 released**: 50% next-word top-1 (beats morpheus's 43.8%), 0% contamination
+- [ ] Basque dictionary wordlist (`eu_wordlist.combined.gz`) for FUTO's dictionary engine
+- [ ] Re-run `compare_inference.py` on v2 GGUF vs morpheus for apples-to-apples comparison
+- [ ] Increase triple ratio in 4m to improve FUTO-format autocorrect (currently 0% standalone)
