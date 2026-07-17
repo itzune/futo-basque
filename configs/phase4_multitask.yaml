@@ -43,3 +43,12 @@ modes:
     lr: 5.0e-5                   # cosine → ~5e-6 over 18K steps
     save_every: 2000
     out: finetune/stage_m
+
+  # Recover mode: restart from a healthy checkpoint with lower LR after
+  # a loss spike.  Uses explicit max_grad_norm for stability.
+  recover:
+    total_steps: 14000           # 4k already done → 4k+14k = 18k total
+    lr: 2.0e-5                   # gentler than full's 5e-5
+    max_grad_norm: 1.0           # explicit gradient clipping
+    save_every: 2000
+    out: finetune/stage_m

@@ -68,7 +68,7 @@ def main():
     )
     ap.add_argument("--config", default=None,
                     help="YAML config file (configs/phase4_multitask.yaml)")
-    ap.add_argument("--mode", default="full", choices=["mini", "full"],
+    ap.add_argument("--mode", default="full", choices=["mini", "full", "recover"],
                     help="Which mode section to load from the config")
     ap.add_argument("--base", required=True,
                     help="Base checkpoint dir (pretrain/base — the healthy plain-text model)")
@@ -95,6 +95,8 @@ def main():
     ap.add_argument("--save-every", type=int, default=None)
     ap.add_argument("--save-total-limit", type=int, default=None)
     ap.add_argument("--num-workers", type=int, default=None)
+    ap.add_argument("--max-grad-norm", type=float, default=None,
+                    help="Gradient clipping norm (default 1.0)")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--wandb-project", type=str, default="futo-eu")
     ap.add_argument("--progress-log", type=str, default=None)
@@ -123,6 +125,7 @@ def main():
     save_every = pick(args.save_every, cfg, "save_every", 2000)
     save_total_limit = pick(args.save_total_limit, cfg, "save_total_limit", 3)
     num_workers = pick(args.num_workers, cfg, "num_workers", 4)
+    max_grad_norm = pick(args.max_grad_norm, cfg, "max_grad_norm", 1.0)
     seed = pick(args.seed, cfg, "seed", 1337)
 
     set_seed(seed)
@@ -160,6 +163,7 @@ def main():
         warmup_steps=warmup,
         weight_decay=0.01,
         lr_scheduler_type="cosine",
+        max_grad_norm=max_grad_norm,
         bf16=True,
         logging_steps=50,
         save_steps=save_every,
@@ -199,7 +203,8 @@ def main():
           f"global batch {micro_batch * grad_accum}, seq_len {seq_len}")
     print(f"  plain text:  {corpus} (PLW=1.0 — next-word prediction)")
     print(f"  triples:     {synth_jsonl} + {real_jsonl} (isolated, prompt masked)")
-    print(f"  base:        {args.base} (pretrain — healthy plain-text model)")
+    print(f"  base:        {args.base}")
+    print(f"  grad clip:   max_grad_norm={max_grad_norm}")
     print(f"Progress log: {progress_log}")
     if args.eval_jsonl:
         print(f"Real-typo eval: every {args.eval_every} steps → {out}/real_typo_eval.csv")

@@ -98,7 +98,7 @@ echo "  ✓ uv: $(uv --version 2>&1)"
 
 # Determine if any GPU phase is running
 NEEDS_GPU=false
-for p in 3 4a 4b 4c 4d 4m; do has_phase "$p" && NEEDS_GPU=true; done
+for p in 3 4a 4b 4c 4d 4m 4mr; do has_phase "$p" && NEEDS_GPU=true; done
 
 if [ "$NEEDS_GPU" = true ]; then
   echo "  syncing deps (train group: torch/transformers/accelerate/wandb)..."
@@ -318,6 +318,40 @@ phase4m() {
   echo
 }
 
+# ─── Phase 4mr: multi-task RECOVER (restart from checkpoint w/ lower LR) ── #
+phase4mr() {
+  local base_dir="finetune/stage_m"
+  local ckpt="$base_dir/checkpoint-4000"
+  if [ ! -d "$ckpt" ]; then
+    ckpt="$base_dir/checkpoint-2000"
+    echo "  ⚠ checkpoint-4000 not found, trying $ckpt" >&2
+  fi
+  if [ ! -d "$ckpt" ]; then
+    echo "✗ no checkpoint in $base_dir — run phase 4m first" >&2; exit 1
+  fi
+  echo "━━━ Phase 4mr: multi-task RECOVER from $ckpt → $STAGE_M ━━━"
+  echo "  Lower LR (2e-5) + explicit grad clipping — fixes loss spike"
+  if [ "$(count_shards "$CLEAN_OUT")" -eq 0 ]; then
+    echo "✗ no shards in $CLEAN_OUT — run phase 1 first" >&2; exit 1
+  fi
+  if [ ! -f "notes/synth.json" ] || [ ! -f "notes/real.json" ]; then
+    echo "✗ notes/synth.json or notes/real.json not found — run phase 4a dataprep first" >&2; exit 1
+  fi
+  local wb=()
+  if [ -n "$WANDB_PROJECT" ]; then wb=(--wandb-project "$WANDB_PROJECT"); fi
+  uv run python -m scripts.finetune.multitask \
+    --config "$CFG_PHASE4M" --mode recover \
+    --base "$ckpt" \
+    --tokenizer "$TOKENIZER" \
+    --corpus "$CLEAN_OUT" \
+    --synth-jsonl notes/synth.json \
+    --real-jsonl notes/real.json \
+    --progress-log finetune/stage_m/progress_recover.log \
+    "${wb[@]}"
+  echo "  ✓ Stage M (recovered) checkpoint at $STAGE_M/final/"
+  echo
+}
+
 # ─── Phase 5: package to GGUF ──────────────────────────────────────────── #
 phase5() {
   echo "━━━ Phase 5: package to FUTO-compatible GGUF ━━━"
@@ -365,8 +399,9 @@ for p in "${PHASES[@]}"; do
     4c) phase4c ;;
     4d) phase4d ;;
     4m) phase4m ;;
+    4mr) phase4mr ;;
     5)  phase5  ;;
-    *)  echo "unknown phase '$p' (use: 1 1b 2 3 4a 4b 4c 5)" >&2; exit 1 ;;
+    *)  echo "unknown phase '$p' (use: 1 1b 2 3 4a 4b 4c 4d 4m 4mr 5)" >&2; exit 1 ;;
   esac
 done
 
