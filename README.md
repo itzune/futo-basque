@@ -28,15 +28,48 @@ Keyboard (no training required):
 
 **Results** (25M params, 3B pretrain tokens):
 
+We measure real keyboard utility — **keystrokes saved** while typing realistic
+messaging messages (WhatsApp/Telegram-style). After each word, the model
+suggests the next word; if correct, those characters are saved (user taps the
+suggestion instead of typing).
+
 | Metric | Score |
 |--------|:---:|
-| Next-word top-1 | **50.0%** |
-| Next-word top-5 | **41.7%** |
-| Objective (next-token loss) | 2.3–3.5 |
-| Format contamination | 0% |
+| Keystrokes saved (top-1 suggestion) | **8.4%** |
+| Keystrokes saved (top-5 suggestions bar) | **28.9%** |
+| Next-word top-1 (prompt eval) | 50.0% |
+| Next-word top-5 (prompt eval) | 41.7% |
 
-The model generates clean Basque (`ikasten`, `zait`, `izango`, `da`) with no
-control-token contamination.
+On a typical 40-character message, the suggestions bar saves ~12 keystrokes —
+about a third of the typing. The model generates clean Basque (`ikasten`,
+`zait`, `izango`, `da`) with no control-token contamination.
+
+#### Examples
+
+`Eskerrik asko denagatik oso ondo pasa nuen` ("Thanks for everything, I had a great time")
+
+```
+  ✓ Eskerrik ▎                → asko      ✓  saved 4 chars
+    Eskerrik asko ▎           → denagatik    (model suggested: zure)
+    Eskerrik asko denagatik ▎ → oso          (model suggested: eta)
+    …asko denagatik oso ▎     → ondo         (model suggested: pozik)
+  ✓ …asko denagatik oso ondo ▎ → pasa      ✓  saved 4 chars
+    …denagatik oso ondo pasa ▎ → nuen        (model suggested: duzuen)
+  → 8/28 predictable characters saved (29%)
+```
+
+`Ongi etorri etxera afaria prest duzu` ("Welcome home, dinner is ready for you")
+
+```
+  ✓ Ongi ▎                    → etorri    ✓  saved 6 chars
+    Ongi etorri ▎             → etxera      (model suggested: gure)
+    …
+  → 6/27 predictable characters saved (22%)
+```
+
+The model nails formulaic openings and strong collocations (`Eskerrik asko`,
+`Ongi etorri`, `Non dago`, `Zein filma ikusi`) where Basque has predictable
+patterns, and misses genuinely open-ended content words.
 
 > **Note on autocorrect:** standalone GGUF eval in FUTO control-token format
 > (`keyboard.py`) scores 0% on autocorrect — the model learned plain-text
@@ -84,6 +117,7 @@ All scripts run as modules from the repo root: `uv run python -m scripts.<phase>
 | **5** | `scripts.package.patch_metadata` | (called by 5) Write `keyboardlm.*` fields into the GGUF | — | — |
 | **5** | `scripts.package.downgrade_v2` | Downgrade GGUF v3→v2 + strip fields the app's llama.cpp doesn't understand | — | GGUF |
 | **eval** | `scripts.eval.keyboard` | Autocorrect + next-word accuracy on a hand-curated Basque test set | — | **GPU** + ckpt |
+| **eval** | `scripts.eval.keystrokes` | **Keystrokes-saved** on realistic messaging messages (measures real keyboard utility) | — | GGUF + tokenizer |
 
 ### Library helpers (`scripts/lib/`)
 
