@@ -25,6 +25,11 @@ reference_model/*.gguf
 reference_model/extracted_spm.model
 reference_model/.cache/
 
+# Wordlist build-time inputs (hunspell eu dict cache, ~5 MB)
+dictionaries/.hunspell_eu/
+# dicttool + junit jars for compile_dict.sh (~360 KB)
+dictionaries/.dicttool_cache/
+
 # Generated notes (dumps, diffs, eval results) — keep the dir via .gitkeep
 notes/*.txt
 notes/*.json
@@ -40,3 +45,6 @@ nohup.out
 # --- OS ---
 .DS_Store
 Thumbs.db
+
+# Decompressed combined (regenerable from .gz via gunzip/compile_dict.sh)
+dictionaries/eu_wordlist.combined

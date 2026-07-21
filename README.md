@@ -75,9 +75,10 @@ patterns, and misses genuinely open-ended content words.
 > (`keyboard.py`) scores 0% on autocorrect — the model learned plain-text
 > next-word well but the 40% triple ratio in finetuning wasn't sufficient to
 > master the `<XBU><CHAR_*><XBC>…<XEC>` format. In the real FUTO app, the
-> [hybrid dictionary engine](./RESEARCH.md) should compensate by proposing
-> real-word candidates for the transformer to re-rank. A Basque dictionary
-> wordlist (`eu_wordlist.combined.gz`) is still needed for full functionality.
+> [hybrid dictionary engine](./RESEARCH.md) compensates by proposing
+> real-word candidates for the transformer to re-rank. The Basque dictionary
+> wordlist that powers that engine is now built — see
+> [Basque dictionary](#basque-dictionary-autocorrect-candidate-engine) below.
 
 > To train from scratch or reproduce, follow the [Quick start](#quick-start) below.
 
@@ -116,6 +117,8 @@ All scripts run as modules from the repo root: `uv run python -m scripts.<phase>
 | **5** | `scripts.package.to_gguf` | Convert HF checkpoint → GGUF + patch FUTO `keyboardlm.*` metadata | `phase5_package.yaml` | finetune ckpt |
 | **5** | `scripts.package.patch_metadata` | (called by 5) Write `keyboardlm.*` fields into the GGUF | — | — |
 | **5** | `scripts.package.downgrade_v2` | Downgrade GGUF v3→v2 + strip fields the app's llama.cpp doesn't understand | — | GGUF |
+| **5d** | `scripts.package.build_wordlist` | Build `eu_wordlist.combined.gz` — stream Latxa v2 → count → hunspell-validate → AOSP combined format | — | network |
+| **5d** | `scripts.package.compile_dict.sh` | Compile `eu_wordlist.combined.gz` → binary `eu.dict` (AOSP dicttool, v2/202) for side-loading | — | java |
 | **eval** | `scripts.eval.keyboard` | Autocorrect + next-word accuracy on a hand-curated Basque test set | — | **GPU** + ckpt |
 | **eval** | `scripts.eval.keystrokes` | **Keystrokes-saved** on realistic messaging messages (measures real keyboard utility) | — | GGUF + tokenizer |
 
@@ -293,6 +296,78 @@ spot-check that warns if splitting degrades.
 
 ---
 
+## Basque dictionary (autocorrect candidate engine)
+
+FUTO's hybrid autocorrect works in two halves: a **classical dictionary engine**
+proposes real-word candidates (is *kaixo* a word? *kaixp* is not), and the
+**transformer** re-ranks them by contextual probability. The model ships as the
+transformer half; the dictionary half was missing for Basque.
+
+Two deliverables now close that gap:
+
+| File | Format | Role |
+|------|--------|------|
+| `dictionaries/eu_wordlist.combined.gz` | AOSP *combined* text (source) | What FUTO compiles into the app at build time; human-readable; contributes upstream |
+| `dictionaries/eu.dict` | AOSP v2 binary (magic `0x9bc13afe`, ver 202) | What the app's import UI accepts today for side-loading |
+
+**Build pipeline** (`scripts/package/build_wordlist.py`):
+1. Stream Latxa v2 from HF (wikipedia + euscrawl-v2 + zelaihandi, 600k lines)
+2. **Two tracks**: common words (lowercased, min-count ≥3, **hunspell eu_ES**
+   validated — rejects gibberish, accepts correctly inflected forms like
+   `etxea`/`etxera`/`etxetik` that affix expansion would miss) + a **proper-noun
+   track** (capitalized tokens / acronyms selected by a capitalization-ratio
+   heuristic: a token is a name if it's *usually* capitalized, which excludes
+   sentence-initial common words). This captures the place names, person names
+   and acronyms — `Bilbo`, `Euskal`, `Gipuzkoako`, `AEB` — that hunspell rejects.
+3. **Bigrams**: top-80k adjacent word pairs emitted as AOSP bigrams
+   (`  bigram=<w>,f=<f>` under the unigram) for contextual next-word ranking.
+4. Inject must-include words from `config/eu.py` (autocorrect test targets, etc.)
+5. Map corpus counts → AOSP log-scale frequency `f` ∈ [1,255] (255 = prob 1);
+   `compile_dict.sh` compiles the `.combined.gz` → binary `.dict`
+
+**Result**: 791,021 unigrams + 80,000 bigrams, 4.0 MB gzipped / 5.6 MB binary.
+f range 147–255 (graduated — only 1 word clamped at f=255). Top words are clean
+Basque function words (`eta, da, ez, ere, bat, du, izan, dira, egin, behar`);
+top bigrams are real collocations (`ez da` "is not", `izango da` "will be",
+`eskerrik asko` "thank you", `egin behar` "must do"). All 40 autocorrect test
+targets from `config/eu.py` are present. Rebuild:
+
+```bash
+uv run python -m scripts.package.build_wordlist \
+  --lines-per-source 200000 --max-words 0 --max-bigrams 80000 \
+  --save-freq notes/wordfreq_latxa.json
+./scripts/package/compile_dict.sh
+```
+
+**Side-load**: copy `dictionaries/eu.dict` to your phone and open it (or import
+via Settings → Languages & Models). The app detects the `0x9bc13afe` magic +
+`locale=eu` header and registers it as the Basque main dictionary
+(`DictionaryFactory.tryOpeningCustomMainDictionaryForLocale`). See RESEARCH.md
+§11.2 for the import path.
+
+### Comparison with FUTO's referenced Basque dictionary
+
+FUTO's dictionaries page (`keyboard.futo.tech/dictionaries?locale=eu-ES`) does
+**not** ship its own Basque dictionary — it links to Helium314's community AOSP
+dict (`main_eu.dict` on Codeberg). Ours beats it on every field:
+
+| field | FUTO/H314 `main_eu` | Ours |
+|-------|--------------------|------|
+| unigrams | 106,786 | **791,021** (7.4×) |
+| bigrams | 0 | **80,000** |
+| autocorrect targets | 39/40 | **40/40** |
+| proper nouns | 7,986 | **338,308** |
+| `da` rank (#1 Basque word) | f=109, 5,312 above | **f=248, 1 above** |
+| words clamped at f=255 | 31 | **1** |
+
+The frequency-quality gap is the most consequential: H314's frequencies are
+saturated (top-15 all clamped at f=255, and `da` — the #1 Basque word — ranks
+behind 5,312 others), so the keyboard can't order candidates. Ours graduates
+(`eta`=255, `da`=248, `ez`=245, …) from real Latxa corpus counts. Reproduce the
+comparison with `scripts/package/compare_full.py`.
+
+---
+
 ## Status
 
 - [x] Project scaffold + config + YAML run-configs (`configs/*.yaml`)
@@ -307,5 +382,9 @@ spot-check that warns if splitting degrades.
 - [x] **Diagnostic tooling**: objective diagnostic (`diag_objective.py`),
       next-word eval (`nextword_pretrain.py`), loss diagnostic (`diag_4m_loss.py`)
 - [x] **v2.0.0 released**: 50% next-word top-1, 0% contamination
-- [ ] Basque dictionary wordlist (`eu_wordlist.combined.gz`) for FUTO's dictionary engine
+- [x] **Basque dictionary** (`dictionaries/eu_wordlist.combined.gz` + `eu.dict`) for
+      FUTO's hybrid dictionary engine — 791k unigrams + 80k bigrams from 600k
+      Latxa v2 lines, hunspell-validated + proper-noun track, beats FUTO's
+      referenced (Helium314) dict on every field (7.4× words, graduated
+      frequencies, bigrams, 40/40 autocorrect targets)
 - [ ] Increase triple ratio in 4m to improve FUTO-format autocorrect (currently 0% standalone)
