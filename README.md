@@ -39,6 +39,7 @@ suggestion instead of typing).
 | Keystrokes saved (top-5 suggestions bar) | **28.9%** |
 | Next-word top-1 (prompt eval) | 50.0% |
 | Next-word top-5 (prompt eval) | 41.7% |
+| **Autocorrect top-1** (FUTO `<XBU>/<XBC>/<XEC>`) | **82.5%** |
 
 On a typical 40-character message, the suggestions bar saves ~12 keystrokes —
 about a third of the typing. The model generates clean Basque (`ikasten`,
@@ -71,14 +72,16 @@ The model nails formulaic openings and strong collocations (`Eskerrik asko`,
 `Ongi etorri`, `Non dago`, `Zein filma ikusi`) where Basque has predictable
 patterns, and misses genuinely open-ended content words.
 
-> **Note on autocorrect:** standalone GGUF eval in FUTO control-token format
-> (`keyboard.py`) scores 0% on autocorrect — the model learned plain-text
-> next-word well but the 40% triple ratio in finetuning wasn't sufficient to
-> master the `<XBU><CHAR_*><XBC>…<XEC>` format. In the real FUTO app, the
-> [hybrid dictionary engine](./RESEARCH.md) compensates by proposing
-> real-word candidates for the transformer to re-rank. The Basque dictionary
-> wordlist that powers that engine is now built — see
-> [Basque dictionary](#basque-dictionary-autocorrect-candidate-engine) below.
+> **Note on autocorrect:** the shipped GGUF (`gguf/eu_futo_v2.gguf`) scores
+> **82.5% top-1** (33/40) on the FUTO `<XBU><CHAR_*><XBC>…<XEC>` autocorrect
+> eval (`scripts/eval/autocorrect_diag.py`), verified directly via llama.cpp
+> against the deliverable. It corrects real Basque typos — `kaixp→kaixo`,
+> `narkatu→barkatu`, `inaki→Iñaki` (ñ restored), `eskkerrik→eskerrik`
+> (dedup). Caveats: it is BOS-sensitive (60% with BOS vs 82.5% without — the
+> triples were trained without a BOS prefix), and the mini variant scores only
+> 37.5%. Pair it with the [Basque dictionary](#basque-dictionary-autocorrect-candidate-engine)
+> for the full hybrid engine. (An earlier "0%" measurement was a stale eval
+> against a contaminated checkpoint, not the shipped model.)
 
 > To train from scratch or reproduce, follow the [Quick start](#quick-start) below.
 
@@ -381,10 +384,12 @@ comparison with `scripts/package/compare_full.py`.
 - [x] **Unified multi-task finetune** (4m): 18k steps, 60% plain + 40% triples
 - [x] **Diagnostic tooling**: objective diagnostic (`diag_objective.py`),
       next-word eval (`nextword_pretrain.py`), loss diagnostic (`diag_4m_loss.py`)
-- [x] **v2.0.0 released**: 50% next-word top-1, 0% contamination
+- [x] **v2.0.0 released**: 50% next-word top-1, **82.5% autocorrect top-1**, 0% contamination
 - [x] **Basque dictionary** (`dictionaries/eu_wordlist.combined.gz` + `eu.dict`) for
       FUTO's hybrid dictionary engine — 791k unigrams + 80k bigrams from 600k
       Latxa v2 lines, hunspell-validated + proper-noun track, beats FUTO's
       referenced (Helium314) dict on every field (7.4× words, graduated
       frequencies, bigrams, 40/40 autocorrect targets)
-- [ ] Increase triple ratio in 4m to improve FUTO-format autocorrect (currently 0% standalone)
+- [x] FUTO-format autocorrect verified at **82.5% top-1** on the shipped GGUF
+      (`scripts/eval/autocorrect_diag.py`, llama.cpp, no BOS) — corrects real
+      Basque typos incl. ñ-restoration and dedup. (BOS-sensitive: 60% with BOS.)
