@@ -39,7 +39,8 @@ suggestion instead of typing).
 | Keystrokes saved (top-5 suggestions bar) | **28.9%** |
 | Next-word top-1 (prompt eval) | 50.0% |
 | Next-word top-5 (prompt eval) | 41.7% |
-| **Autocorrect top-1** (FUTO `<XBU>/<XBC>/<XEC>`) | **82.5%** |
+| Autocorrect top-1 (isolated benchmark, no context) | 82.5% |
+| Autocorrect top-1 (in-context, matches FUTO runtime) | ~67% |
 
 On a typical 40-character message, the suggestions bar saves ~12 keystrokes —
 about a third of the typing. The model generates clean Basque (`ikasten`,
@@ -398,7 +399,8 @@ comparison with `scripts/package/compare_full.py`.
 - [x] **Unified multi-task finetune** (4m): 18k steps, 60% plain + 40% triples
 - [x] **Diagnostic tooling**: objective diagnostic (`diag_objective.py`),
       next-word eval (`nextword_pretrain.py`), loss diagnostic (`diag_4m_loss.py`)
-- [x] **v2.0.0 released**: 50% next-word top-1, **82.5% autocorrect top-1**, 0% contamination
+- [x] **v2.0.0 released**: 50% next-word top-1, ~67% in-context autocorrect top-1
+      (82.5% isolated best-case), 0% contamination
 - [x] **Basque dictionary** (`dictionaries/eu_wordlist.combined.gz` + `eu.dict`) for
       FUTO's hybrid dictionary engine — 791k unigrams + 80k bigrams from 600k
       Latxa v2 lines, hunspell-validated + proper-noun track, beats FUTO's
