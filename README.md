@@ -72,16 +72,30 @@ The model nails formulaic openings and strong collocations (`Eskerrik asko`,
 `Ongi etorri`, `Non dago`, `Zein filma ikusi`) where Basque has predictable
 patterns, and misses genuinely open-ended content words.
 
-> **Note on autocorrect:** the shipped GGUF (`gguf/eu_futo_v2.gguf`) scores
-> **82.5% top-1** (33/40) on the FUTO `<XBU><CHAR_*><XBC>…<XEC>` autocorrect
-> eval (`scripts/eval/autocorrect_diag.py`), verified directly via llama.cpp
-> against the deliverable. It corrects real Basque typos — `kaixp→kaixo`,
-> `narkatu→barkatu`, `inaki→Iñaki` (ñ restored), `eskkerrik→eskerrik`
-> (dedup). Caveats: it is BOS-sensitive (60% with BOS vs 82.5% without — the
-> triples were trained without a BOS prefix), and the mini variant scores only
-> 37.5%. Pair it with the [Basque dictionary](#basque-dictionary-autocorrect-candidate-engine)
+> **Note on autocorrect:** the shipped GGUF (`gguf/eu_futo_v2.gguf`) corrects
+> real Basque typos in FUTO's `<XBU><CHAR_*><XBC>…<XEC>` format — verified
+> directly via llama.cpp against the deliverable (`scripts/eval/autocorrect_diag.py`):
+> `kaixp→kaixo`, `narkatu→barkatu`, `inaki→Iñaki` (ñ restored),
+> `eskkerrik→eskerrik` (dedup).
+>
+> **BOS handling (verified against FUTO source):** FUTO's runtime
+> (`native/jni/org_futo_inputmethod_latin_xlm_LanguageModel.cpp`) prepends BOS
+> (id 1) to the context — `next_context.insert(next_context.begin(), 1); // BOS`
+> — and feeds the `<XBU>` keypress chars *after* that context, then a forced
+> `<XBC>`, i.e. `[BOS, context…, <XBU>, chars, <XBC>]` → decode. Training matches:
+> triples are stored as `[BOS, <XBU>…<XBC>…<XEC>, EOS]` (`isolated.py` /
+> `datasets.py`). Scores by prompt shape:
+>
+> | prompt shape | top-1 | matches |
+> |---|---|---|
+> | isolated, no BOS `[<XBU>,chars,<XBC>]` | **82.5%** (33/40) | best-case |
+> | isolated, with BOS `[BOS,<XBU>,chars,<XBC>]` | 60.0% (24/40) | |
+> | **realistic in-context** `[BOS,ctx,<XBU>,chars,<XBC>]` | **~67%** (8/12 spot) | **FUTO runtime** |
+>
+> The mini variant (`eu_futo_mini_v2.gguf`) scores only 37.5% — ship the full
+> model for autocorrect. Pair with the [Basque dictionary](#basque-dictionary-autocorrect-candidate-engine)
 > for the full hybrid engine. (An earlier "0%" measurement was a stale eval
-> against a contaminated checkpoint, not the shipped model.)
+> against a contaminated checkpoint + a buggy diagnostic, not the shipped model.)
 
 > To train from scratch or reproduce, follow the [Quick start](#quick-start) below.
 
@@ -390,6 +404,7 @@ comparison with `scripts/package/compare_full.py`.
       Latxa v2 lines, hunspell-validated + proper-noun track, beats FUTO's
       referenced (Helium314) dict on every field (7.4× words, graduated
       frequencies, bigrams, 40/40 autocorrect targets)
-- [x] FUTO-format autocorrect verified at **82.5% top-1** on the shipped GGUF
-      (`scripts/eval/autocorrect_diag.py`, llama.cpp, no BOS) — corrects real
-      Basque typos incl. ñ-restoration and dedup. (BOS-sensitive: 60% with BOS.)
+- [x] FUTO-format autocorrect verified on the shipped GGUF
+      (`scripts/eval/autocorrect_diag.py`, llama.cpp). Best-case isolated 82.5%
+      (33/40); realistic in-context `[BOS,ctx,<XBU>,chars,<XBC>]` ~67% — matches
+      FUTO's runtime (BOS prepended to context, verified in `LanguageModel.cpp`).
